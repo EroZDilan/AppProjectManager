@@ -22,6 +22,12 @@ import {
   DialogActions,
   TextField,
   MenuItem,
+  Card,
+  CardContent,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
 } from "@mui/material";
 import {
   Edit as EditIcon,
@@ -37,7 +43,7 @@ import { es } from "date-fns/locale";
 import { useNotification } from "../context/NotificationContext";
 import projectService from "../services/project-service";
 import taskService from "../services/task-service";
-import { Project, Task, TaskCreate } from "../types";
+import { Project, Task, TaskCreate, TaskUpdate, ProjectUpdate } from "../types";
 
 const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -50,7 +56,14 @@ const ProjectDetail: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [openCreateTaskDialog, setOpenCreateTaskDialog] =
     useState<boolean>(false);
-  const [openDeleteDialog, setOpenDeleteDialog] = useState<boolean>(false);
+  const [openEditTaskDialog, setOpenEditTaskDialog] = useState<boolean>(false);
+  const [openDeleteTaskDialog, setOpenDeleteTaskDialog] =
+    useState<boolean>(false);
+  const [openEditProjectDialog, setOpenEditProjectDialog] =
+    useState<boolean>(false);
+  const [openDeleteProjectDialog, setOpenDeleteProjectDialog] =
+    useState<boolean>(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [submitLoading, setSubmitLoading] = useState<boolean>(false);
 
   // Cargar proyecto y tareas
@@ -68,15 +81,134 @@ const ProjectDetail: React.FC = () => {
         console.error("Error al cargar detalles del proyecto:", error);
         addNotification("error", "Error al cargar detalles del proyecto");
         setLoading(false);
-        navigate("/projects");
+        navigate("/");
       }
     };
 
     fetchProjectDetails();
   }, [id, navigate, addNotification]);
 
-  // Esquema de validación para crear tarea
-  const validationSchema = Yup.object({
+  // Actualizar estado del proyecto
+  const handleUpdateProjectStatus = async (newStatus: string) => {
+    if (!project) return;
+
+    try {
+      const response = await projectService.updateProject(project.id, {
+        status: newStatus as
+          | "pending"
+          | "in_progress"
+          | "completed"
+          | "cancelled",
+      });
+
+      setProject(response.project);
+      addNotification("success", "Estado de proyecto actualizado");
+    } catch (error) {
+      console.error("Error al actualizar estado de proyecto:", error);
+      addNotification("error", "Error al actualizar estado de proyecto");
+    }
+  };
+
+  // Actualizar estado de tarea
+  const handleUpdateTaskStatus = async (taskId: number, newStatus: string) => {
+    try {
+      const response = await taskService.updateTask(taskId, {
+        status: newStatus as
+          | "pending"
+          | "in_progress"
+          | "completed"
+          | "cancelled",
+      });
+
+      // Actualizar la lista de tareas
+      setTasks(
+        tasks.map((task) => (task.id === taskId ? response.task : task))
+      );
+
+      addNotification("success", "Estado de tarea actualizado");
+    } catch (error) {
+      console.error("Error al actualizar estado de tarea:", error);
+      addNotification("error", "Error al actualizar estado de tarea");
+    }
+  };
+
+  // Actualizar prioridad de tarea
+  const handleUpdateTaskPriority = async (
+    taskId: number,
+    newPriority: string
+  ) => {
+    try {
+      const response = await taskService.updateTask(taskId, {
+        priority: newPriority as "low" | "medium" | "high",
+      });
+
+      // Actualizar la lista de tareas
+      setTasks(
+        tasks.map((task) => (task.id === taskId ? response.task : task))
+      );
+
+      addNotification("success", "Prioridad de tarea actualizada");
+    } catch (error) {
+      console.error("Error al actualizar prioridad de tarea:", error);
+      addNotification("error", "Error al actualizar prioridad de tarea");
+    }
+  };
+
+  // Esquema de validación para editar proyecto
+  const projectValidationSchema = Yup.object({
+    name: Yup.string()
+      .required("El nombre es requerido")
+      .max(100, "El nombre no debe exceder los 100 caracteres"),
+    description: Yup.string().max(
+      500,
+      "La descripción no debe exceder los 500 caracteres"
+    ),
+    status: Yup.string()
+      .oneOf(
+        ["pending", "in_progress", "completed", "cancelled"],
+        "Estado inválido"
+      )
+      .required("El estado es requerido"),
+    start_date: Yup.date().nullable(),
+    end_date: Yup.date()
+      .nullable()
+      .min(
+        Yup.ref("start_date"),
+        "La fecha de finalización debe ser posterior a la fecha de inicio"
+      ),
+  });
+
+  // Formik para editar proyecto
+  const editProjectFormik = useFormik<ProjectUpdate>({
+    initialValues: {
+      name: project?.name || "",
+      description: project?.description || "",
+      status: project?.status || "pending",
+      start_date: project?.start_date || "",
+      end_date: project?.end_date || "",
+    },
+    validationSchema: projectValidationSchema,
+    enableReinitialize: true,
+    onSubmit: async (values) => {
+      if (!project) return;
+
+      try {
+        setSubmitLoading(true);
+        const response = await projectService.updateProject(project.id, values);
+        setProject(response.project);
+        addNotification("success", "Proyecto actualizado exitosamente");
+        setOpenEditProjectDialog(false);
+        setSubmitLoading(false);
+      } catch (error) {
+        console.error("Error al actualizar proyecto:", error);
+        addNotification("error", "Error al actualizar proyecto");
+        setSubmitLoading(false);
+      }
+    },
+  });
+
+  // Esquema de validación para crear/editar tarea
+  const taskValidationSchema = Yup.object({
     title: Yup.string()
       .required("El título es requerido")
       .max(100, "El título no debe exceder los 100 caracteres"),
@@ -106,7 +238,7 @@ const ProjectDetail: React.FC = () => {
       due_date: "",
       project_id: id ? parseInt(id, 10) : undefined,
     },
-    validationSchema,
+    validationSchema: taskValidationSchema,
     onSubmit: async (values) => {
       try {
         setSubmitLoading(true);
@@ -123,6 +255,95 @@ const ProjectDetail: React.FC = () => {
       }
     },
   });
+
+  // Formik para editar tarea
+  const editTaskFormik = useFormik<TaskUpdate>({
+    initialValues: {
+      title: selectedTask?.title || "",
+      description: selectedTask?.description || "",
+      status: selectedTask?.status || "pending",
+      priority: selectedTask?.priority || "medium",
+      due_date: selectedTask?.due_date || "",
+    },
+    validationSchema: taskValidationSchema,
+    enableReinitialize: true,
+    onSubmit: async (values) => {
+      if (!selectedTask) return;
+
+      try {
+        setSubmitLoading(true);
+        const response = await taskService.updateTask(selectedTask.id, {
+          ...values,
+          project_id: id ? parseInt(id, 10) : undefined,
+        });
+
+        // Actualizar la lista de tareas
+        setTasks(
+          tasks.map((task) =>
+            task.id === selectedTask.id ? response.task : task
+          )
+        );
+
+        addNotification("success", "Tarea actualizada exitosamente");
+        setOpenEditTaskDialog(false);
+        setSubmitLoading(false);
+      } catch (error) {
+        console.error("Error al actualizar tarea:", error);
+        addNotification("error", "Error al actualizar tarea");
+        setSubmitLoading(false);
+      }
+    },
+  });
+
+  // Manejar click en editar tarea
+  const handleEditTask = (task: Task) => {
+    setSelectedTask(task);
+    setOpenEditTaskDialog(true);
+  };
+
+  // Manejar click en eliminar tarea
+  const handleDeleteTaskClick = (task: Task) => {
+    setSelectedTask(task);
+    setOpenDeleteTaskDialog(true);
+  };
+
+  // Confirmar eliminación de tarea
+  const handleDeleteTask = async () => {
+    if (!selectedTask) return;
+
+    try {
+      setSubmitLoading(true);
+      await taskService.deleteTask(selectedTask.id);
+
+      // Actualizar lista de tareas
+      setTasks(tasks.filter((task) => task.id !== selectedTask.id));
+
+      addNotification("success", "Tarea eliminada exitosamente");
+      setOpenDeleteTaskDialog(false);
+      setSubmitLoading(false);
+    } catch (error) {
+      console.error("Error al eliminar tarea:", error);
+      addNotification("error", "Error al eliminar tarea");
+      setSubmitLoading(false);
+    }
+  };
+
+  // Manejar eliminación de proyecto
+  const handleDeleteProject = async () => {
+    if (!project) return;
+
+    try {
+      setSubmitLoading(true);
+      await projectService.deleteProject(project.id);
+      addNotification("success", "Proyecto eliminado exitosamente");
+      navigate("/");
+    } catch (error) {
+      console.error("Error al eliminar proyecto:", error);
+      addNotification("error", "Error al eliminar proyecto");
+      setSubmitLoading(false);
+      setOpenDeleteProjectDialog(false);
+    }
+  };
 
   // Formatear fecha
   const formatDate = (dateString: string | null): string => {
@@ -208,23 +429,6 @@ const ProjectDetail: React.FC = () => {
     }
   };
 
-  // Manejar eliminación de proyecto
-  const handleDeleteProject = async () => {
-    if (!project) return;
-
-    try {
-      setSubmitLoading(true);
-      await projectService.deleteProject(project.id);
-      addNotification("success", "Proyecto eliminado exitosamente");
-      navigate("/projects");
-    } catch (error) {
-      console.error("Error al eliminar proyecto:", error);
-      addNotification("error", "Error al eliminar proyecto");
-      setSubmitLoading(false);
-      setOpenDeleteDialog(false);
-    }
-  };
-
   if (loading) {
     return (
       <Box
@@ -247,7 +451,7 @@ const ProjectDetail: React.FC = () => {
         <Button
           variant="outlined"
           startIcon={<ArrowBackIcon />}
-          onClick={() => navigate("/projects")}
+          onClick={() => navigate("/")}
           sx={{ mt: 2 }}
         >
           Volver a proyectos
@@ -256,14 +460,23 @@ const ProjectDetail: React.FC = () => {
     );
   }
 
+  // Contadores para el resumen
+  const taskCountByStatus = {
+    pending: tasks.filter((task) => task.status === "pending").length,
+    in_progress: tasks.filter((task) => task.status === "in_progress").length,
+    completed: tasks.filter((task) => task.status === "completed").length,
+    cancelled: tasks.filter((task) => task.status === "cancelled").length,
+    total: tasks.length,
+  };
+
   return (
     <Box>
       <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
-        <IconButton onClick={() => navigate("/projects")} sx={{ mr: 1 }}>
+        <IconButton onClick={() => navigate("/")} sx={{ mr: 1 }}>
           <ArrowBackIcon />
         </IconButton>
         <Typography variant="h5" component="h1">
-          Detalles del Proyecto
+          Detalle del Proyecto
         </Typography>
       </Box>
 
@@ -288,11 +501,26 @@ const ProjectDetail: React.FC = () => {
             }}
           >
             <Box sx={{ mb: 1 }}>
-              <Chip
-                label={getStatusLabel(project.status)}
-                color={getStatusColor(project.status)}
-                sx={{ fontWeight: "bold" }}
-              />
+              <TextField
+                select
+                size="small"
+                value={project.status}
+                onChange={(e) => handleUpdateProjectStatus(e.target.value)}
+                sx={{ minWidth: 150 }}
+              >
+                <MenuItem value="pending">
+                  <Chip label="Pendiente" color="warning" size="small" />
+                </MenuItem>
+                <MenuItem value="in_progress">
+                  <Chip label="En progreso" color="info" size="small" />
+                </MenuItem>
+                <MenuItem value="completed">
+                  <Chip label="Completado" color="success" size="small" />
+                </MenuItem>
+                <MenuItem value="cancelled">
+                  <Chip label="Cancelado" color="error" size="small" />
+                </MenuItem>
+              </TextField>
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
               Fecha inicio: {formatDate(project.start_date)}
@@ -307,7 +535,7 @@ const ProjectDetail: React.FC = () => {
           <Button
             variant="outlined"
             startIcon={<EditIcon />}
-            onClick={() => navigate(`/projects?edit=${project.id}`)}
+            onClick={() => setOpenEditProjectDialog(true)}
             sx={{ mr: 1 }}
           >
             Editar proyecto
@@ -316,11 +544,68 @@ const ProjectDetail: React.FC = () => {
             variant="outlined"
             color="error"
             startIcon={<DeleteIcon />}
-            onClick={() => setOpenDeleteDialog(true)}
+            onClick={() => setOpenDeleteProjectDialog(true)}
           >
             Eliminar proyecto
           </Button>
         </Box>
+      </Paper>
+
+      {/* Resumen de tareas */}
+      <Paper sx={{ p: 3, mb: 4 }}>
+        <Typography variant="h6" gutterBottom>
+          Resumen de tareas
+        </Typography>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item xs={6} sm={2.4}>
+            <Card sx={{ textAlign: "center" }}>
+              <CardContent>
+                <Typography variant="h4">{taskCountByStatus.total}</Typography>
+                <Typography variant="body2">Total</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={2.4}>
+            <Card sx={{ bgcolor: "warning.light", textAlign: "center" }}>
+              <CardContent>
+                <Typography variant="h4">
+                  {taskCountByStatus.pending}
+                </Typography>
+                <Typography variant="body2">Pendientes</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={2.4}>
+            <Card sx={{ bgcolor: "info.light", textAlign: "center" }}>
+              <CardContent>
+                <Typography variant="h4">
+                  {taskCountByStatus.in_progress}
+                </Typography>
+                <Typography variant="body2">En progreso</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={2.4}>
+            <Card sx={{ bgcolor: "success.light", textAlign: "center" }}>
+              <CardContent>
+                <Typography variant="h4">
+                  {taskCountByStatus.completed}
+                </Typography>
+                <Typography variant="body2">Completadas</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={6} sm={2.4}>
+            <Card sx={{ bgcolor: "error.light", textAlign: "center" }}>
+              <CardContent>
+                <Typography variant="h4">
+                  {taskCountByStatus.cancelled}
+                </Typography>
+                <Typography variant="body2">Canceladas</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
       </Paper>
 
       <Box
@@ -342,27 +627,35 @@ const ProjectDetail: React.FC = () => {
       </Box>
 
       <Paper>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Título</TableCell>
-                <TableCell>Descripción</TableCell>
-                <TableCell>Estado</TableCell>
-                <TableCell>Prioridad</TableCell>
-                <TableCell>Fecha límite</TableCell>
-                <TableCell>Acciones</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {tasks.length === 0 ? (
+        {tasks.length === 0 ? (
+          <Box sx={{ p: 4, textAlign: "center" }}>
+            <Typography variant="body1" color="text.secondary" gutterBottom>
+              No hay tareas asociadas a este proyecto
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setOpenCreateTaskDialog(true)}
+              sx={{ mt: 2 }}
+            >
+              Crear primera tarea
+            </Button>
+          </Box>
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    No hay tareas asociadas a este proyecto
-                  </TableCell>
+                  <TableCell>Título</TableCell>
+                  <TableCell>Descripción</TableCell>
+                  <TableCell>Estado</TableCell>
+                  <TableCell>Prioridad</TableCell>
+                  <TableCell>Fecha límite</TableCell>
+                  <TableCell>Acciones</TableCell>
                 </TableRow>
-              ) : (
-                tasks.map((task) => (
+              </TableHead>
+              <TableBody>
+                {tasks.map((task) => (
                   <TableRow key={task.id}>
                     <TableCell>{task.title}</TableCell>
                     <TableCell>
@@ -374,36 +667,216 @@ const ProjectDetail: React.FC = () => {
                       })()}
                     </TableCell>
                     <TableCell>
-                      <Chip
-                        label={getStatusLabel(task.status)}
-                        color={getStatusColor(task.status)}
+                      <TextField
+                        select
                         size="small"
-                      />
+                        value={task.status}
+                        onChange={(e) =>
+                          handleUpdateTaskStatus(task.id, e.target.value)
+                        }
+                        sx={{ minWidth: 120 }}
+                      >
+                        <MenuItem value="pending">
+                          <Chip
+                            label="Pendiente"
+                            color="warning"
+                            size="small"
+                          />
+                        </MenuItem>
+                        <MenuItem value="in_progress">
+                          <Chip label="En progreso" color="info" size="small" />
+                        </MenuItem>
+                        <MenuItem value="completed">
+                          <Chip
+                            label="Completado"
+                            color="success"
+                            size="small"
+                          />
+                        </MenuItem>
+                        <MenuItem value="cancelled">
+                          <Chip label="Cancelado" color="error" size="small" />
+                        </MenuItem>
+                      </TextField>
                     </TableCell>
                     <TableCell>
-                      <Chip
-                        label={getPriorityLabel(task.priority)}
-                        color={getPriorityColor(task.priority)}
+                      <TextField
+                        select
                         size="small"
-                      />
+                        value={task.priority}
+                        onChange={(e) =>
+                          handleUpdateTaskPriority(task.id, e.target.value)
+                        }
+                        sx={{ minWidth: 120 }}
+                      >
+                        <MenuItem value="low">
+                          <Chip label="Baja" color="success" size="small" />
+                        </MenuItem>
+                        <MenuItem value="medium">
+                          <Chip label="Media" color="warning" size="small" />
+                        </MenuItem>
+                        <MenuItem value="high">
+                          <Chip label="Alta" color="error" size="small" />
+                        </MenuItem>
+                      </TextField>
                     </TableCell>
                     <TableCell>{formatDate(task.due_date)}</TableCell>
                     <TableCell>
                       <IconButton
                         size="small"
                         color="primary"
-                        onClick={() => navigate(`/tasks/${task.id}`)}
+                        onClick={() => handleEditTask(task)}
+                        title="Editar"
                       >
                         <EditIcon />
                       </IconButton>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleDeleteTaskClick(task)}
+                        title="Eliminar"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Paper>
+
+      {/* Diálogo para editar proyecto */}
+      <Dialog
+        open={openEditProjectDialog}
+        onClose={() => setOpenEditProjectDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Editar proyecto</DialogTitle>
+        <form onSubmit={editProjectFormik.handleSubmit}>
+          <DialogContent>
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Nombre del proyecto"
+                  name="name"
+                  value={editProjectFormik.values.name}
+                  onChange={editProjectFormik.handleChange}
+                  onBlur={editProjectFormik.handleBlur}
+                  error={
+                    editProjectFormik.touched.name &&
+                    Boolean(editProjectFormik.errors.name)
+                  }
+                  helperText={
+                    editProjectFormik.touched.name &&
+                    editProjectFormik.errors.name
+                  }
+                  required
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Descripción"
+                  name="description"
+                  multiline
+                  rows={3}
+                  value={editProjectFormik.values.description}
+                  onChange={editProjectFormik.handleChange}
+                  onBlur={editProjectFormik.handleBlur}
+                  error={
+                    editProjectFormik.touched.description &&
+                    Boolean(editProjectFormik.errors.description)
+                  }
+                  helperText={
+                    editProjectFormik.touched.description &&
+                    editProjectFormik.errors.description
+                  }
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  select
+                  label="Estado"
+                  name="status"
+                  value={editProjectFormik.values.status}
+                  onChange={editProjectFormik.handleChange}
+                  onBlur={editProjectFormik.handleBlur}
+                  error={
+                    editProjectFormik.touched.status &&
+                    Boolean(editProjectFormik.errors.status)
+                  }
+                  helperText={
+                    editProjectFormik.touched.status &&
+                    editProjectFormik.errors.status
+                  }
+                  required
+                >
+                  <MenuItem value="pending">Pendiente</MenuItem>
+                  <MenuItem value="in_progress">En progreso</MenuItem>
+                  <MenuItem value="completed">Completado</MenuItem>
+                  <MenuItem value="cancelled">Cancelado</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Fecha de inicio"
+                  name="start_date"
+                  type="date"
+                  value={editProjectFormik.values.start_date}
+                  onChange={editProjectFormik.handleChange}
+                  onBlur={editProjectFormik.handleBlur}
+                  error={
+                    editProjectFormik.touched.start_date &&
+                    Boolean(editProjectFormik.errors.start_date)
+                  }
+                  helperText={
+                    editProjectFormik.touched.start_date &&
+                    editProjectFormik.errors.start_date
+                  }
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Fecha de finalización"
+                  name="end_date"
+                  type="date"
+                  value={editProjectFormik.values.end_date}
+                  onChange={editProjectFormik.handleChange}
+                  onBlur={editProjectFormik.handleBlur}
+                  error={
+                    editProjectFormik.touched.end_date &&
+                    Boolean(editProjectFormik.errors.end_date)
+                  }
+                  helperText={
+                    editProjectFormik.touched.end_date &&
+                    editProjectFormik.errors.end_date
+                  }
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setOpenEditProjectDialog(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="contained" disabled={submitLoading}>
+              {submitLoading ? (
+                <CircularProgress size={24} />
+              ) : (
+                "Guardar cambios"
+              )}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
 
       {/* Diálogo para crear tarea */}
       <Dialog
@@ -476,6 +949,9 @@ const ProjectDetail: React.FC = () => {
                 >
                   <MenuItem value="pending">Pendiente</MenuItem>
                   <MenuItem value="in_progress">En progreso</MenuItem>
+                  ```typescript
+                  <MenuItem value="pending">Pendiente</MenuItem>
+                  <MenuItem value="in_progress">En progreso</MenuItem>
                   <MenuItem value="completed">Completado</MenuItem>
                   <MenuItem value="cancelled">Cancelado</MenuItem>
                 </TextField>
@@ -537,10 +1013,172 @@ const ProjectDetail: React.FC = () => {
         </form>
       </Dialog>
 
-      {/* Diálogo para confirmar eliminación */}
+      {/* Diálogo para editar tarea */}
       <Dialog
-        open={openDeleteDialog}
-        onClose={() => setOpenDeleteDialog(false)}
+        open={openEditTaskDialog}
+        onClose={() => setOpenEditTaskDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Editar tarea</DialogTitle>
+        <form onSubmit={editTaskFormik.handleSubmit}>
+          <DialogContent>
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Título de la tarea"
+                  name="title"
+                  value={editTaskFormik.values.title}
+                  onChange={editTaskFormik.handleChange}
+                  onBlur={editTaskFormik.handleBlur}
+                  error={
+                    editTaskFormik.touched.title &&
+                    Boolean(editTaskFormik.errors.title)
+                  }
+                  helperText={
+                    editTaskFormik.touched.title && editTaskFormik.errors.title
+                  }
+                  required
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Descripción"
+                  name="description"
+                  multiline
+                  rows={3}
+                  value={editTaskFormik.values.description}
+                  onChange={editTaskFormik.handleChange}
+                  onBlur={editTaskFormik.handleBlur}
+                  error={
+                    editTaskFormik.touched.description &&
+                    Boolean(editTaskFormik.errors.description)
+                  }
+                  helperText={
+                    editTaskFormik.touched.description &&
+                    editTaskFormik.errors.description
+                  }
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  select
+                  label="Estado"
+                  name="status"
+                  value={editTaskFormik.values.status}
+                  onChange={editTaskFormik.handleChange}
+                  onBlur={editTaskFormik.handleBlur}
+                  error={
+                    editTaskFormik.touched.status &&
+                    Boolean(editTaskFormik.errors.status)
+                  }
+                  helperText={
+                    editTaskFormik.touched.status &&
+                    editTaskFormik.errors.status
+                  }
+                  required
+                >
+                  <MenuItem value="pending">Pendiente</MenuItem>
+                  <MenuItem value="in_progress">En progreso</MenuItem>
+                  <MenuItem value="completed">Completado</MenuItem>
+                  <MenuItem value="cancelled">Cancelado</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  select
+                  label="Prioridad"
+                  name="priority"
+                  value={editTaskFormik.values.priority}
+                  onChange={editTaskFormik.handleChange}
+                  onBlur={editTaskFormik.handleBlur}
+                  error={
+                    editTaskFormik.touched.priority &&
+                    Boolean(editTaskFormik.errors.priority)
+                  }
+                  helperText={
+                    editTaskFormik.touched.priority &&
+                    editTaskFormik.errors.priority
+                  }
+                  required
+                >
+                  <MenuItem value="low">Baja</MenuItem>
+                  <MenuItem value="medium">Media</MenuItem>
+                  <MenuItem value="high">Alta</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Fecha límite"
+                  name="due_date"
+                  type="date"
+                  value={editTaskFormik.values.due_date}
+                  onChange={editTaskFormik.handleChange}
+                  onBlur={editTaskFormik.handleBlur}
+                  error={
+                    editTaskFormik.touched.due_date &&
+                    Boolean(editTaskFormik.errors.due_date)
+                  }
+                  helperText={
+                    editTaskFormik.touched.due_date &&
+                    editTaskFormik.errors.due_date
+                  }
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setOpenEditTaskDialog(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="contained" disabled={submitLoading}>
+              {submitLoading ? (
+                <CircularProgress size={24} />
+              ) : (
+                "Guardar cambios"
+              )}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
+
+      {/* Diálogo para confirmar eliminación de tarea */}
+      <Dialog
+        open={openDeleteTaskDialog}
+        onClose={() => setOpenDeleteTaskDialog(false)}
+      >
+        <DialogTitle>Confirmar eliminación</DialogTitle>
+        <DialogContent>
+          <Typography>
+            ¿Estás seguro de que deseas eliminar la tarea "{selectedTask?.title}
+            "? Esta acción no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenDeleteTaskDialog(false)}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleDeleteTask}
+            variant="contained"
+            color="error"
+            disabled={submitLoading}
+          >
+            {submitLoading ? <CircularProgress size={24} /> : "Eliminar"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Diálogo para confirmar eliminación de proyecto */}
+      <Dialog
+        open={openDeleteProjectDialog}
+        onClose={() => setOpenDeleteProjectDialog(false)}
       >
         <DialogTitle>Confirmar eliminación</DialogTitle>
         <DialogContent>
@@ -551,7 +1189,9 @@ const ProjectDetail: React.FC = () => {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenDeleteDialog(false)}>Cancelar</Button>
+          <Button onClick={() => setOpenDeleteProjectDialog(false)}>
+            Cancelar
+          </Button>
           <Button
             onClick={handleDeleteProject}
             variant="contained"

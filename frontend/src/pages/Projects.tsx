@@ -22,6 +22,9 @@ import {
   CircularProgress,
   Grid,
   InputAdornment,
+  Card,
+  CardContent,
+  CardActions,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -35,11 +38,13 @@ import * as Yup from "yup";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+import { useAuth } from "../context/authContext";
 import { useNotification } from "../context/NotificationContext";
 import projectService from "../services/project-service";
 import { Project, ProjectCreate, ProjectUpdate } from "../types";
 
 const Projects: React.FC = () => {
+  const { authState } = useAuth();
   const navigate = useNavigate();
   const { addNotification } = useNotification();
 
@@ -161,6 +166,34 @@ const Projects: React.FC = () => {
     },
   });
 
+  // Actualizar estado del proyecto
+  const handleUpdateProjectStatus = async (
+    projectId: number,
+    newStatus: string
+  ) => {
+    try {
+      const response = await projectService.updateProject(projectId, {
+        status: newStatus as
+          | "pending"
+          | "in_progress"
+          | "completed"
+          | "cancelled",
+      });
+
+      // Actualizar la lista de proyectos
+      setProjects(
+        projects.map((project) =>
+          project.id === projectId ? response.project : project
+        )
+      );
+
+      addNotification("success", "Estado de proyecto actualizado");
+    } catch (error) {
+      console.error("Error al actualizar estado de proyecto:", error);
+      addNotification("error", "Error al actualizar estado de proyecto");
+    }
+  };
+
   // Formatear fecha
   const formatDate = (dateString: string | null): string => {
     if (!dateString) return "-";
@@ -265,6 +298,15 @@ const Projects: React.FC = () => {
 
   return (
     <Box>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom>
+          ¡Bienvenido, {authState.user?.username}!
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Este es tu panel de control para administrar tus proyectos.
+        </Typography>
+      </Box>
+
       <Box
         sx={{
           display: "flex",
@@ -273,7 +315,7 @@ const Projects: React.FC = () => {
           mb: 3,
         }}
       >
-        <Typography variant="h5">Proyectos</Typography>
+        <Typography variant="h5">Tus Proyectos</Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -285,7 +327,7 @@ const Projects: React.FC = () => {
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} sm={6} md={8}>
+          <Grid item xs={12} sm={8}>
             <TextField
               fullWidth
               placeholder="Buscar por nombre o descripción"
@@ -302,7 +344,7 @@ const Projects: React.FC = () => {
               }}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={4}>
+          <Grid item xs={12} sm={4}>
             <TextField
               select
               fullWidth
@@ -326,80 +368,112 @@ const Projects: React.FC = () => {
         <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
           <CircularProgress />
         </Box>
+      ) : filteredProjects.length === 0 ? (
+        <Paper sx={{ p: 4, textAlign: "center" }}>
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            No se encontraron proyectos
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            Comienza creando tu primer proyecto
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setOpenCreateDialog(true)}
+          >
+            Nuevo Proyecto
+          </Button>
+        </Paper>
       ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Nombre</TableCell>
-                <TableCell>Descripción</TableCell>
-                <TableCell>Estado</TableCell>
-                <TableCell>Fecha inicio</TableCell>
-                <TableCell>Fecha fin</TableCell>
-                <TableCell>Acciones</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredProjects.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    No se encontraron proyectos
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredProjects.map((project) => (
-                  <TableRow key={project.id}>
-                    <TableCell>{project.name}</TableCell>
-                    // Solo la parte con el error
-                    <TableCell>
-                      {(() => {
-                        if (!project.description) return "-";
-                        if (project.description.length > 50)
-                          return `${project.description.substring(0, 50)}...`;
-                        return project.description;
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={getStatusLabel(project.status)}
-                        color={getStatusColor(project.status)}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>{formatDate(project.start_date)}</TableCell>
-                    <TableCell>{formatDate(project.end_date)}</TableCell>
-                    <TableCell>
-                      <IconButton
-                        size="small"
-                        color="primary"
-                        onClick={() => navigate(`/projects/${project.id}`)}
-                        title="Ver detalles"
-                      >
-                        <ViewIcon />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        color="info"
-                        onClick={() => handleEditProject(project)}
-                        title="Editar"
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => handleDeleteClick(project)}
-                        title="Eliminar"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <Grid container spacing={3}>
+          {filteredProjects.map((project) => (
+            <Grid item xs={12} sm={6} md={4} key={project.id}>
+              <Card
+                sx={{
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  transition: "transform 0.2s, box-shadow 0.2s",
+                  "&:hover": {
+                    transform: "translateY(-4px)",
+                    boxShadow: "0 4px 10px rgba(0,0,0,0.1)",
+                  },
+                }}
+              >
+                <CardContent sx={{ flexGrow: 1 }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      mb: 2,
+                    }}
+                  >
+                    <Typography variant="h6" component="div" noWrap>
+                      {project.name}
+                    </Typography>
+                    <TextField
+                      select
+                      size="small"
+                      value={project.status}
+                      onChange={(e) =>
+                        handleUpdateProjectStatus(project.id, e.target.value)
+                      }
+                      sx={{ minWidth: 120 }}
+                    >
+                      <MenuItem value="pending">
+                        <Chip label="Pendiente" color="warning" size="small" />
+                      </MenuItem>
+                      <MenuItem value="in_progress">
+                        <Chip label="En progreso" color="info" size="small" />
+                      </MenuItem>
+                      <MenuItem value="completed">
+                        <Chip label="Completado" color="success" size="small" />
+                      </MenuItem>
+                      <MenuItem value="cancelled">
+                        <Chip label="Cancelado" color="error" size="small" />
+                      </MenuItem>
+                    </TextField>
+                  </Box>
+                  <Typography color="text.secondary" sx={{ mb: 2 }} paragraph>
+                    {project.description
+                      ? project.description.length > 120
+                        ? `${project.description.substring(0, 120)}...`
+                        : project.description
+                      : "Sin descripción"}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Inicio: {formatDate(project.start_date)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Fin: {formatDate(project.end_date)}
+                  </Typography>
+                </CardContent>
+                <CardActions>
+                  <Button
+                    size="small"
+                    onClick={() => navigate(`/projects/${project.id}`)}
+                  >
+                    Ver Detalles
+                  </Button>
+                  <Button
+                    size="small"
+                    color="primary"
+                    onClick={() => handleEditProject(project)}
+                  >
+                    Editar
+                  </Button>
+                  <Button
+                    size="small"
+                    color="error"
+                    onClick={() => handleDeleteClick(project)}
+                  >
+                    Eliminar
+                  </Button>
+                </CardActions>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
       )}
 
       {/* Diálogo para crear proyecto */}

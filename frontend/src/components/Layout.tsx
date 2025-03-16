@@ -22,7 +22,6 @@ import {
 import MenuIcon from "@mui/icons-material/Menu";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import FolderIcon from "@mui/icons-material/Folder";
-import AssignmentIcon from "@mui/icons-material/Assignment";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import LogoutIcon from "@mui/icons-material/Logout";
 
@@ -70,9 +69,8 @@ const Layout: React.FC = () => {
 
   // Items del menú lateral
   const menuItems = [
-    { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
-    { text: "Proyectos", icon: <FolderIcon />, path: "/projects" },
-    { text: "Tareas", icon: <AssignmentIcon />, path: "/tasks" },
+    { text: "Proyectos", icon: <FolderIcon />, path: "/" },
+    { text: "Perfil", icon: <AccountCircleIcon />, path: "/profile" },
   ];
 
   // Contenido del drawer
@@ -120,9 +118,8 @@ const Layout: React.FC = () => {
           </IconButton>
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {/* Título dinámico basado en la ruta */}
-            {location.pathname === "/" && "Dashboard"}
+            {location.pathname === "/" && "Proyectos"}
             {location.pathname.includes("/projects") && "Proyectos"}
-            {location.pathname.includes("/tasks") && "Tareas"}
             {location.pathname.includes("/profile") && "Perfil"}
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center" }}>

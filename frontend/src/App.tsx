@@ -18,11 +18,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 
 // Páginas privadas
-import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
 import ProjectDetail from "./pages/ProjectDetail";
-import Tasks from "./pages/Tasks";
-import TaskDetail from "./pages/TaskDetail";
 import Profile from "./pages/Profile";
 
 // Componente protegido para rutas que requieren autenticación
@@ -110,11 +107,8 @@ function App() {
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Dashboard />} />
-                <Route path="projects" element={<Projects />} />
+                <Route index element={<Projects />} />
                 <Route path="projects/:id" element={<ProjectDetail />} />
-                <Route path="tasks" element={<Tasks />} />
-                <Route path="tasks/:id" element={<TaskDetail />} />
                 <Route path="profile" element={<Profile />} />
               </Route>
 
